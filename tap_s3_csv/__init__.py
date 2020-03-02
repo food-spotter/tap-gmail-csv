@@ -56,7 +56,7 @@ def get_sampled_schema_for_table(config, table_spec):
     }
 
 
-def sync_table(config, state, table_spec):
+def sync_table(config, state, table_spec, schema: dict):
     table_name = table_spec['name']
     modified_since = dateutil.parser.parse(
         state.get(table_name, {}).get('modified_since') or
@@ -100,7 +100,8 @@ def sync_table(config, state, table_spec):
     #     inferred_schema,
     #     override_schema)
 
-    schema = get_sampled_schema_for_table(config, table_spec)
+    if not schema:
+        schema = get_sampled_schema_for_table(config, table_spec)
     singer.write_schema(
         table_name,
         schema,
@@ -199,9 +200,10 @@ def do_sync(args):
 
     config = tap_s3_csv.config.load(args.config)
     state = load_state(args.state)
+    catalog = load_catalog(args.properties) if args.properties else None
 
     for table in config['tables']:
-        state = sync_table(config, state, table)
+        state = sync_table(config, state, table, schema=catalog)
 
     logger.info('Done syncing.')
 
@@ -218,9 +220,17 @@ def do_discover(args):
             schema,
             key_properties=table['key_properties'])
 
-
-
     logger.info('Done discover.') 
+
+def load_catalog(filename):
+    catalog = {}
+    try:
+        with open(filename) as handle:
+            catalog = json.load(handle)
+    except Exception:
+        logger.fatal("Failed to decode catalog file. Is it valid JSON?")
+        raise RuntimeError
+    return catalog
 
 
 def main():
@@ -230,6 +240,9 @@ def main():
         '-c', '--config', help='Config file', required=True)
     parser.add_argument(
         '-s', '--state', help='State file')
+    parser.add_argument(
+        '-p', '--properties', '--catalog', help='Catalog file with fields selected'
+    )
     parser.add_argument(
         '-d', '--discover', help='Discover schema for table spec(s)', action='store_true'
     )
