@@ -1,6 +1,6 @@
 import json
 
-from tap_s3_csv.logger import LOGGER as logger
+from tap_gmail_csv.logger import LOGGER as logger
 from voluptuous import Schema, Required, Any, Optional
 
 CONFIG_CONTRACT = Schema({

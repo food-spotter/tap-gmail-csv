@@ -1,7 +1,7 @@
 import dateutil
 import pytz
 
-from tap_s3_csv.logger import LOGGER as logger
+from tap_gmail_csv.logger import LOGGER as logger
 
 
 def convert_row(row, schema):

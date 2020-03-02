@@ -1,6 +1,6 @@
 import boto3
-import tap_s3_csv.csv_handler
-import tap_s3_csv.excel_handler
+import tap_gmail_csv.csv_handler
+import tap_gmail_csv.excel_handler
 
 
 # def get_file_handle(config, s3_path):
@@ -18,9 +18,9 @@ import tap_s3_csv.excel_handler
 def get_row_iterator(config, table_spec, file_attachment):
 
     if table_spec['format'] == 'csv':
-        return tap_s3_csv.csv_handler.get_row_iterator(
+        return tap_gmail_csv.csv_handler.get_row_iterator(
             table_spec, file_attachment)
 
     elif table_spec['format'] == 'excel':
-        return tap_s3_csv.excel_handler.get_row_iterator(
+        return tap_gmail_csv.excel_handler.get_row_iterator(
             table_spec, file_attachment)

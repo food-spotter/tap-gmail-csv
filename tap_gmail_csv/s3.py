@@ -1,9 +1,9 @@
 import re
 
 import boto3
-from tap_s3_csv.logger import LOGGER as logger
+from tap_gmail_csv.logger import LOGGER as logger
 
-import tap_s3_csv.format_handler
+import tap_gmail_csv.format_handler
 
 
 def sample_file(config, table_spec, s3_path, sample_rate, max_records):
@@ -12,7 +12,7 @@ def sample_file(config, table_spec, s3_path, sample_rate, max_records):
 
     samples = []
 
-    iterator = tap_s3_csv.format_handler.get_row_iterator(
+    iterator = tap_gmail_csv.format_handler.get_row_iterator(
         config, table_spec, s3_path)
 
     current_row = 0

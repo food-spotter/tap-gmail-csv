@@ -1,6 +1,6 @@
 import unittest
 
-from tap_s3_csv import merge_dicts
+from tap_gmail_csv import merge_dicts
 
 
 class TestDictionaryMerge(unittest.TestCase):

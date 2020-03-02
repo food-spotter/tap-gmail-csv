@@ -7,10 +7,10 @@ import tempfile
 from typing import Union, Dict, NamedTuple, Generator, Iterator
 from operator import attrgetter
 
-from tap_s3_csv.gmail_client import GmailClient, Message, File
+from tap_gmail_csv.gmail_client import GmailClient, Message, File
 
-from tap_s3_csv.logger import LOGGER as logger
-import tap_s3_csv.format_handler
+from tap_gmail_csv.logger import LOGGER as logger
+import tap_gmail_csv.format_handler
 
 
 A_HREF_REGEX = r"<a\s+(?:[^>]*?\s+)?href=([\"'])(http.*?)\1"
@@ -111,7 +111,7 @@ def sample_file(config, table_spec, file_attachment: File, sample_rate, max_reco
 
     samples = []
 
-    iterator = tap_s3_csv.format_handler.get_row_iterator(
+    iterator = tap_gmail_csv.format_handler.get_row_iterator(
         config, table_spec, file_attachment)
 
     current_row = 0

@@ -2,7 +2,7 @@ import codecs
 import csv
 import re
 import gzip
-from tap_s3_csv.gmail_client import File
+from tap_gmail_csv.gmail_client import File
 
 
 def generator_wrapper(reader):

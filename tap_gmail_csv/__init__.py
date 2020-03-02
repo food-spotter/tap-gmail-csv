@@ -5,17 +5,17 @@ import singer
 import dateutil
 import datetime
 
-import tap_s3_csv.gmail
+import tap_gmail_csv.gmail
 
-import tap_s3_csv.s3 as s3
-import tap_s3_csv.conversion as conversion
-import tap_s3_csv.config
-import tap_s3_csv.format_handler
+import tap_gmail_csv.s3 as s3
+import tap_gmail_csv.conversion as conversion
+import tap_gmail_csv.config
+import tap_gmail_csv.format_handler
 
-from tap_s3_csv.logger import LOGGER as logger
+from tap_gmail_csv.logger import LOGGER as logger
 
-from tap_s3_csv import gmail
-from tap_s3_csv.gmail_client import File
+from tap_gmail_csv import gmail
+from tap_gmail_csv.gmail_client import File
 
 
 def merge_dicts(first, second):
@@ -131,7 +131,7 @@ def sync_table_file(config, file_attachment: File, table_spec, schema):
     email_account = config['email_address']
     table_name = table_spec['name']
 
-    iterator = tap_s3_csv.format_handler.get_row_iterator(
+    iterator = tap_gmail_csv.format_handler.get_row_iterator(
         config, table_spec, file_attachment)
 
     records_synced = 0
@@ -158,7 +158,7 @@ def ___sync_table_file(config, s3_file, table_spec, schema):
     email_account = config['email_account']
     table_name = table_spec['name']
 
-    iterator = tap_s3_csv.format_handler.get_row_iterator(
+    iterator = tap_gmail_csv.format_handler.get_row_iterator(
         config, table_spec, s3_file)
 
     records_synced = 0
@@ -198,7 +198,7 @@ def load_state(filename):
 def do_sync(args):
     logger.info('Starting sync.')
 
-    config = tap_s3_csv.config.load(args.config)
+    config = tap_gmail_csv.config.load(args.config)
     state = load_state(args.state)
     catalog = load_catalog(args.properties) if args.properties else None
 
@@ -210,7 +210,7 @@ def do_sync(args):
 def do_discover(args):
     logger.info('Starting discover.')
 
-    config = tap_s3_csv.config.load(args.config)
+    config = tap_gmail_csv.config.load(args.config)
     state = load_state(args.state)
 
     for table in config['tables']:
