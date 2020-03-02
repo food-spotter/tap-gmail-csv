@@ -40,7 +40,7 @@ def get_sampled_schema_for_table(config, table_spec):
     gmail_emails = gmail.get_emails_for_table(config, table_spec)
     # s3_files = s3.get_input_files_for_table(config, table_spec)
 
-    samples = s3.sample_files(config, table_spec, s3_files)
+    samples = gmail.sample_files(config, table_spec, gmail_emails)
 
     metadata_schema = {
         '_email_source_bucket': {'type': 'string'},
@@ -100,10 +100,11 @@ def sync_table(config, state, table_spec):
     #     inferred_schema,
     #     override_schema)
 
-    # singer.write_schema(
-    #     table_name,
-    #     schema,
-    #     key_properties=table_spec['key_properties'])
+    schema = get_sampled_schema_for_table(config, table_spec)
+    singer.write_schema(
+        table_name,
+        schema,
+        key_properties=table_spec['key_properties'])
 
     records_streamed = 0
     schema = {}
@@ -204,6 +205,23 @@ def do_sync(args):
 
     logger.info('Done syncing.')
 
+def do_discover(args):
+    logger.info('Starting discover.')
+
+    config = tap_s3_csv.config.load(args.config)
+    state = load_state(args.state)
+
+    for table in config['tables']:
+        schema = get_sampled_schema_for_table(config, table)
+        singer.write_schema(
+            table.get('name'),
+            schema,
+            key_properties=table['key_properties'])
+
+
+
+    logger.info('Done discover.') 
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -212,11 +230,17 @@ def main():
         '-c', '--config', help='Config file', required=True)
     parser.add_argument(
         '-s', '--state', help='State file')
+    parser.add_argument(
+        '-d', '--discover', help='Discover schema for table spec(s)', action='store_true'
+    )
 
     args = parser.parse_args()
 
     try:
-        do_sync(args)
+        if args.discover:
+            do_discover(args)
+        else:
+            do_sync(args)
     except RuntimeError:
         logger.fatal("Run failed.")
         exit(1)
