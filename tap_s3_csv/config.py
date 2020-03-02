@@ -4,15 +4,18 @@ from tap_s3_csv.logger import LOGGER as logger
 from voluptuous import Schema, Required, Any, Optional
 
 CONFIG_CONTRACT = Schema({
-    Required('aws_access_key_id'): str,
-    Required('aws_secret_access_key'): str,
+    Required('email_address'): str,
+    Required('pickle_base64_encoded'): str,
+    Optional('gmail_label'): str,
+    Required('gmail_search_query'): str,
     Required('start_date'): str,
-    Required('bucket'): str,
+    Required('email_address'): str,
     Required('tables'): [{
         Required('name'): str,
         Required('pattern'): str,
         Required('key_properties'): [str],
         Required('format'): Any('csv', 'excel'),
+        Required('source'): Any('attachment', 'url'),
         Optional('unzip'): bool,
         Optional('delimiter'): str,
         Optional('quoting'): Any('QUOTE_MINIMAL', 'QUOTE_ALL', 'QUOTE_NONNUMERIC', 'QUOTE_NONE'),

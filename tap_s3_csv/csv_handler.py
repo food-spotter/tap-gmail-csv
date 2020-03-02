@@ -2,6 +2,7 @@ import codecs
 import csv
 import re
 import gzip
+from tap_s3_csv.gmail_client import File
 
 
 def generator_wrapper(reader):
@@ -10,7 +11,7 @@ def generator_wrapper(reader):
     for row in reader:
         for key, value in row.items():
             if key is None:
-                key = '_s3_extra'
+                key = '_email_extra'
 
             formatted_key = key
 
@@ -25,11 +26,11 @@ def generator_wrapper(reader):
         yield to_return
 
 
-def get_row_iterator(table_spec, file_handle):
+def get_row_iterator(table_spec, file_handle: File):
     if table_spec.get('unzip'):
-        raw_stream = gzip.GzipFile(fileobj=file_handle._raw_stream)
+        raw_stream = gzip.GzipFile(fileobj=file_handle.raw_data)
     else:
-        raw_stream = file_handle._raw_stream
+        raw_stream = file_handle.raw_data
 
     # we use a protected member of the s3 object, _raw_stream, here to create
     # a generator for data from the s3 file.
