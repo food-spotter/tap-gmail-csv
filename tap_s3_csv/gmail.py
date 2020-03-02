@@ -2,11 +2,12 @@ import os
 import re
 import base64
 import datetime
+import dateutil
 import tempfile
-from typing import Union, Dict, NamedTuple, Generator
+from typing import Union, Dict, NamedTuple, Generator, Iterator
 from operator import attrgetter
 
-from tap_s3_csv.gmail_client import GmailClient, Message
+from tap_s3_csv.gmail_client import GmailClient, Message, File
 
 from tap_s3_csv.logger import LOGGER as logger
 import tap_s3_csv.format_handler
@@ -85,8 +86,9 @@ def get_emails_for_table(config: dict, table_spec: dict, modified_since=None, gm
 
     # modified_since was the state value for tap-s3-csv, @TODO rename this to something gmail specific
     # convert modified_since to epoch time to use in search_query
+
     epoch_search_from = _get_epoch_time(
-        modified_since if modified_since else datetime.datetime.isoformat(config.get('start_date'))
+        modified_since if modified_since else dateutil.parser.parse(config.get('start_date'))
         )
 
     search_query += f" after:{epoch_search_from}"
@@ -101,6 +103,55 @@ def get_emails_for_table(config: dict, table_spec: dict, modified_since=None, gm
     messages = _get_ordered_messages(search_query, gmail_client=gmail_client)
 
     return messages
+
+
+def sample_file(config, table_spec, file_attachment: File, sample_rate, max_records):
+    logger.info('Sampling {} ({} records, every {}th record).'
+                .format(file_attachment.file_name, max_records, sample_rate))
+
+    samples = []
+
+    iterator = tap_s3_csv.format_handler.get_row_iterator(
+        config, table_spec, file_attachment)
+
+    current_row = 0
+
+    for row in iterator:
+        if (current_row % sample_rate) == 0:
+            samples.append(row)
+
+        current_row += 1
+
+        if len(samples) >= max_records:
+            break
+
+    logger.info('Sampled {} records.'.format(len(samples)))
+
+    return samples
+
+
+def sample_files(config, table_spec, gmail_emails_list: Iterator[Message],
+                 sample_rate=10, max_records=1000, max_files=5):
+    to_return = []
+
+    files_so_far = 0
+
+    attached_files = []
+    client = _create_client(config)
+
+    for msg in gmail_emails_list:
+        for attachment in msg.attachment_list:
+            to_return += sample_file(config, table_spec, attachment.get_file(client),
+                                    sample_rate, max_records)
+            
+            files_so_far += 1
+
+            if files_so_far >= max_files:
+                break
+        if files_so_far >= max_files:
+            break
+
+    return to_return
 
 
 def main():
