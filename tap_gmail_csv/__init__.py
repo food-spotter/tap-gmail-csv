@@ -1,9 +1,11 @@
 import argparse
 import json
+import sys
 import singer
 
 import dateutil
 import datetime
+from typing import List, Optional
 
 import tap_gmail_csv.gmail
 
@@ -176,7 +178,7 @@ def load_state(filename):
     try:
         with open(filename) as handle:
             state = json.load(handle)
-    except:
+    except Exception:
         logger.fatal("Failed to decode state file. Is it valid json?")
         raise RuntimeError
 
@@ -191,7 +193,8 @@ def do_sync(args):
     catalog = load_catalog(args.properties) if args.properties else None
 
     for table in config["tables"]:
-        state = sync_table(config, state, table, schema=catalog)
+        stream = get_selected_stream(catalog, table.get("name"))
+        state = sync_table(config, state, table, schema=stream)
 
     logger.info("Done syncing.")
 
@@ -200,13 +203,28 @@ def do_discover(args):
     logger.info("Starting discover.")
 
     config = tap_gmail_csv.config.load(args.config)
-    state = load_state(args.state)
+    streams_list = []
 
     for table in config["tables"]:
         schema = get_sampled_schema_for_table(config, table)
-        singer.write_schema(table.get("name"), schema, key_properties=table["key_properties"])
+        # create the stream as a dict
+        stream = singer.SchemaMessage(
+            stream=table.get("name"), schema=schema, key_properties=table["key_properties"], bookmark_properties=None
+        ).asdict()
+        # remove the type key-value
+        stream.pop("type")
+        streams_list.append(stream)
+
+    # write the catalog to stdout
+    write_catalog(streams_list)
 
     logger.info("Done discover.")
+
+
+def write_catalog(streams_list: List[dict]):
+    catalog = {"streams": streams_list}
+    sys.stdout.write(json.dumps(catalog) + "\n")
+    sys.stdout.flush()
 
 
 def load_catalog(filename):
@@ -218,6 +236,28 @@ def load_catalog(filename):
         logger.fatal("Failed to decode catalog file. Is it valid JSON?")
         raise RuntimeError
     return catalog
+
+
+def get_selected_stream(catalog: dict, table_name: str) -> Optional[dict]:
+    """
+    Will search a catalog and locate the schema that matches the given table name.
+    It is assumed that the table_spec should correspond to the stream name: 1-to-1 mapping.
+    Returns None if not found.
+
+    Arguments:
+        catalog {dict} -- a schema catalog, expected as: `{"streams": [stream_dict, ...]}`
+        table_name {str} -- name of table_spec entry which corresponds to the `stream` value.
+
+    Returns:
+        Optional[dict] -- matching stream schema. None otherwise.
+    """
+    logger.info(f"Looking for stream: {table_name}")
+    for stream in catalog.get("streams", []):
+        if stream.get("stream") == table_name:
+            logger.info(f"Found stream for: {table_name}")
+            return stream
+    logger.info(f"No stream found for: {table_name}. Will fall back to inferring schema later in the process.")
+    return None
 
 
 def main():
