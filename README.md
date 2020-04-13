@@ -1,13 +1,16 @@
-# tap-s3-csv
-Author: Connor McArthur (connor@fishtownanalytics.com)
+# ~~tap-s3-csv~~
+# WIP: tap-gmail-csv
 
-[![CircleCI](https://circleci.com/gh/fishtown-analytics/tap-s3-csv/tree/master.svg?style=shield)](https://circleci.com/gh/fishtown-analytics/tap-s3-csv) [![Code Climate](https://codeclimate.com/github/fishtown-analytics/tap-s3-csv/badges/gpa.svg)](https://codeclimate.com/github/fishtown-analytics/tap-s3-csv)
+Fork of Connor McArthur's (connor@fishtownanalytics.com) [tap-s3-csv](https://circleci.com/gh/fishtown-analytics/tap-s3-csv/)
+
+
+## Currently a WIP and this documentation will be updated in due course
 
 [Singer](singer.io) tap that produces JSON-formatted data following
 the [Singer spec](https://github.com/singer-io/getting-started/blob/master/SPEC.md).
 
-Given a configuration that specifies a bucket, a file pattern to match, a file format (`csv` or `excel`),
-and a table name, this tap reads new files from S3, parses them, infers a schema, and outputs the data
+Given a configuration that specifies a GMail account, a file pattern to match, a file format (`csv` or `excel`),
+and a table name, this tap reads attachments/body, parses them, infers a schema, and outputs the data
 according to the Singer spec.
 
 ### Installation
@@ -73,10 +76,10 @@ An output record might look like:
   "id": 3,
   "first_name": "Tobias",
   "last_name": "Funke",
-  "_s3_source_bucket": "csv-bucket",
-  "_s3_source_file": "csv-exports/today.csv",
-  "_s3_source_lineno": 4,
-  "_s3_extra": null
+  "_email_source_address": "smehwere@email.com",
+  "_email_source_file": "csv-exports/today.csv",
+  "_email_source_lineno": 4,
+  "_email_extra": null
 }
 ```
 
@@ -97,16 +100,21 @@ See below for an exhaustive list of configuration fields:
 
 ```javascript
 {
-    // your AWS credentials go here.
-    "aws_access_key_id": "YOUR_ACCESS_KEY_ID",
-    "aws_secret_access_key": "YOUR_SECRET_ACCESS_KEY",
+
+    // the email address your credentials are used for AWS. This is for an audit reason only.
+    "email_address": "me@gmail.com",
+
+    // your authentication token for the above account
+    "pickle_base64_encoded": "encodedstring=",
+    // the gmail label to search against, Optional
+    "gmail_label": "INBOX",
+    // the gmail query used to filter what you want to bring back. Use standard gmail filter commands - https://support.google.com/mail/answer/7190?hl=en
+    "gmail_search_query": "to:me@gmail.com",
 
     // the start date to use on the first run. the tap outputs an updated state on each
     // run which you can use going forward for incremental replication
-    "start_date": "2017-05-01T00:00:00Z",
+    "start_date": "2017-05-01T00:00:00",
 
-    // the bucket to use. make sure the AWS credentials provided have read access.
-    "bucket": "csv-bucket",
 
     // table definitions. you can specify multiple tables to be pulled from a given
     // bucket.
@@ -124,11 +132,24 @@ See below for an exhaustive list of configuration fields:
             "pattern": "csv-exports/(.*)\\.csv$",
 
             // primary key for this table. if append only, use:
-            //   ["_s3_source_file", "_s3_source_lineno"]
+            //   ["_email_source_file", "_email_source_lineno"]
             "key_properties": ["id"],
 
             // format, either "csv" or "excel"
             "format": "csv",
+
+            // does the attacment come from an attachment or a link to be downloaded from the email body
+            "source": "attachment",
+
+            // record delimter (optional), defaults to ","
+            "delimiter": "|",
+
+            // if true, unzip the file before reading it at a csv
+            "unzip": true,
+
+            // if specified, override the default CSV quoting config
+            // More info: https://docs.python.org/3/library/csv.html#csv.QUOTE_ALL
+            "quoting": "QUOTE_NONE",
 
             // if the files don't have a header row, you can specify the field names
             "field_names": ["id", "first_name", "last_name"],
@@ -172,7 +193,7 @@ See below for an exhaustive list of configuration fields:
 - Column names have whitespace removed and replaced with underscores.
 - They are also downcased.
 - A few extra fields are added for help with auditing:
-  - `_s3_source_bucket`: The bucket that this record came from
-  - `_s3_source_file`: The path to the file that this record came from
-  - `_s3_source_lineno`: The line number in the source file that this record was found on
-  - `_s3_extra`: If you specify field names in the config, and there are more records in a row than field names, the overflow will end up here.
+  - `_email_source_address`: The email address that this record came from
+  - `_email_source_file`: The path to the file that this record came from
+  - `_email_source_lineno`: The line number in the source file that this record was found on
+  - `_email_extra`: If you specify field names in the config, and there are more records in a row than field names, the overflow will end up here.
