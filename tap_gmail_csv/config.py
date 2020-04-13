@@ -21,7 +21,6 @@ CONFIG_CONTRACT = Schema(
                 Optional("unzip"): bool,
                 Optional("delimiter"): str,
                 Optional("quoting"): Any("QUOTE_MINIMAL", "QUOTE_ALL", "QUOTE_NONNUMERIC", "QUOTE_NONE"),
-                Optional("search_prefix"): str,
                 Optional("field_names"): [str],
                 Optional("worksheet_name"): str,
                 Optional("schema_overrides"): {
