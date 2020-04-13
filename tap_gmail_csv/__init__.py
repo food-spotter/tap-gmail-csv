@@ -9,7 +9,6 @@ from typing import List, Optional
 
 import tap_gmail_csv.gmail
 
-import tap_gmail_csv.s3 as s3
 import tap_gmail_csv.conversion as conversion
 import tap_gmail_csv.config
 import tap_gmail_csv.format_handler
@@ -40,7 +39,6 @@ def get_sampled_schema_for_table(config, table_spec):
     logger.info("Sampling records to determine table schema.")
 
     gmail_emails = gmail.get_emails_for_table(config, table_spec)
-    # s3_files = s3.get_input_files_for_table(config, table_spec)
 
     samples = gmail.sample_files(config, table_spec, gmail_emails)
 
@@ -69,9 +67,6 @@ def sync_table(config, state, table_spec, schema: dict):
     # for logging purposes of knowing how many emails to sync, got to turn generator->list
     gmail_emails_list = list(gmail_emails)
 
-    # s3_files = s3.get_input_files_for_table(
-    #     config, table_spec, modified_since)
-
     logger.info("Found {} emails to be synced.".format(len(gmail_emails_list)))
 
     if not gmail_emails_list or len(gmail_emails_list) == 0:
@@ -83,8 +78,10 @@ def sync_table(config, state, table_spec, schema: dict):
     for message in gmail_emails_list:
         if source_type == "attachment":
             message.filter(pattern)
-            for att in message.attachment_list:
-                files_list.append((message.internal_date, att))
+            # None check
+            if message.attachment_list:
+                for att in message.attachment_list:
+                    files_list.append((message.internal_date, att))
 
     if len(files_list) == 0:
         return state
@@ -144,31 +141,6 @@ def sync_table_file(config, file_attachment: File, table_spec, schema):
     return records_synced
 
 
-def ___sync_table_file(config, s3_file, table_spec, schema):
-    logger.info('Syncing file "{}".'.format(s3_file))
-
-    email_account = config["email_account"]
-    table_name = table_spec["name"]
-
-    iterator = tap_gmail_csv.format_handler.get_row_iterator(config, table_spec, s3_file)
-
-    records_synced = 0
-
-    for row in iterator:
-        metadata = {
-            "_email_source_address": email_account,
-            "_email_source_file": s3_file,
-            # index zero, +1 for header row
-            "_email_source_lineno": records_synced + 2,
-        }
-
-        to_write = [{**conversion.convert_row(row, schema), **metadata}]
-        singer.write_records(table_name, to_write)
-        records_synced += 1
-
-    return records_synced
-
-
 def load_state(filename):
     state = {}
 
@@ -221,9 +193,9 @@ def do_discover(args):
     logger.info("Done discover.")
 
 
-def write_catalog(streams_list: List[dict]):
+def write_catalog(streams_list: List[dict], json_indent=None):
     catalog = {"streams": streams_list}
-    sys.stdout.write(json.dumps(catalog) + "\n")
+    sys.stdout.write(json.dumps(catalog, indent=json_indent) + "\n")
     sys.stdout.flush()
 
 
