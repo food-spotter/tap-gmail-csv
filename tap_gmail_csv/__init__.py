@@ -1,20 +1,20 @@
 import argparse
 import json
 import sys
-import singer
-
-import dateutil
+import pickle
+import base64
 import datetime
 from typing import List, Optional
 
-import tap_gmail_csv.gmail
+import singer
+import dateutil
+from google_auth_oauthlib.flow import InstalledAppFlow
 
+import tap_gmail_csv.gmail
 import tap_gmail_csv.conversion as conversion
 import tap_gmail_csv.config
 import tap_gmail_csv.format_handler
-
 from tap_gmail_csv.logger import LOGGER as logger
-
 from tap_gmail_csv import gmail
 from tap_gmail_csv.gmail_client.models import File
 
@@ -232,10 +232,46 @@ def get_selected_stream(catalog: dict, table_name: str) -> Optional[dict]:
     return None
 
 
+def do_gmail_auth_creation(args):
+    SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+
+    try:
+        with open(args.auth_creation) as credentials:
+            json.load(credentials)
+    except Exception:
+        logger.fatal(f"Failed to load the file: {args.auth_creation}")
+        logger.fatal(
+            "You can create a credentials.json file by enabling the GMail API from here: "
+            "https://developers.google.com/gmail/api/quickstart/python"
+        )
+        raise RuntimeError
+
+    flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+    logger.info("GMail authentication required...")
+    creds = flow.run_local_server(port=0)
+
+    pickled_token = pickle.dumps(creds)
+    encoded_pickle = {"pickle_base64_encoded": base64.encodebytes(pickled_token)}
+
+    logger.info("Base64 representation of the Pickle generated successfully.")
+    logger.info("Copy paste this long string value to be put inside your CONFIG file:")
+    logger.info(f"{encoded_pickle}")
+
+
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-c", "--config", help="Config file", required=True)
+    parser.add_argument(
+        "-a",
+        "--auth-creation",
+        help="Generate GMail authentication pickle in base64 using a Google generated credentials.json file",
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        help="Config file",
+        required=not any([arg not in ["-a", "--auth-creation"] for arg in sys.argv]),
+    )
     parser.add_argument("-s", "--state", help="State file")
     parser.add_argument("-p", "--properties", "--catalog", help="Catalog file with fields selected")
     parser.add_argument("-d", "--discover", help="Discover schema for table spec(s)", action="store_true")
@@ -245,6 +281,8 @@ def main():
     try:
         if args.discover:
             do_discover(args)
+        elif args.auth_creation:
+            do_gmail_auth_creation(args)
         else:
             do_sync(args)
     except RuntimeError:
