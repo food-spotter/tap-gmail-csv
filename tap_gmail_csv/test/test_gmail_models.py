@@ -1,9 +1,9 @@
 from unittest import TestCase
 from unittest.mock import call, patch, MagicMock, mock_open
-
 from io import BytesIO
+from dataclasses import dataclass
 
-from tap_gmail_csv.gmail_client.models import Attachment, File, Message
+from tap_gmail_csv.gmail_client.models import Attachment, File, Message, Url, FileNameCannotBeEvaluatedException
 from tap_gmail_csv.gmail_client.client import GmailClient
 
 
@@ -35,7 +35,7 @@ class TestFile(TestCase):
         # assert
         assert self.file1 != ""
         assert self.file1 != 0
-        assert self.file1 != True
+        assert self.file1 is not True
 
 
 class TestAttachment(TestCase):
@@ -68,7 +68,7 @@ class TestAttachment(TestCase):
         # assert
         assert self.attachment1 != ""
         assert self.attachment1 != 0
-        assert self.attachment1 != True
+        assert self.attachment1 is not True
 
     @patch("tap_gmail_csv.gmail_client.client.GmailClient._connect", MagicMock())
     @patch("base64.urlsafe_b64decode")
@@ -79,11 +79,16 @@ class TestAttachment(TestCase):
         # mock
         mock_b64decode.return_value = bytes("some data", "UTF-8")
         # run
-        file1 = self.attachment1.get_file(client)
+        file1 = self.attachment1.get_file(gmail_client=client)
         # assert
         mock_raw_gmail_response.assert_called_once_with(self.message_id, self.attachment_id)
         mock_b64decode.assert_called_once()
         self.assertIsInstance(file1, File)
+
+    def test_attachment_get_file_raises_exception_without_client(self):
+        # run and assert
+        with self.assertRaises(TypeError):
+            self.attachment1.get_file()
 
 
 class TestMessage(TestCase):
@@ -159,7 +164,7 @@ class TestMessage(TestCase):
         # assert
         assert self.message1 != ""
         assert self.message1 != 0
-        assert self.message1 != True
+        assert self.message1 is not True
 
     def test_message_lt(self):
         # setup
@@ -213,15 +218,15 @@ class TestMessage(TestCase):
     def test_filter_url_list(self):
         # setup
         self.message1.url_list = [
-            "https://www.some.sebsite.com/reports-for-you/file.txt",
-            "https://www.some.sebsite.com/reports-for-you/file.csv",
-            "https://www.some.sebsite.com/reports-for-you/file.xls",
+            Url("1", "https://www.some.sebsite.com/reports-for-you/file.txt"),
+            Url("1", "https://www.some.sebsite.com/reports-for-you/file.csv"),
+            Url("1", "https://www.some.sebsite.com/reports-for-you/file.xls"),
         ]
         filter_pattern = "(.*)\\.csv$"
         # run
         self.message1._filter_url_list(filter_pattern)
         # assert
-        assert self.message1.url_list == ["https://www.some.sebsite.com/reports-for-you/file.csv"]
+        assert self.message1.url_list == [Url("1", "https://www.some.sebsite.com/reports-for-you/file.csv")]
 
     def test_filter_url_list_none_check(self):
         # setup
@@ -231,3 +236,278 @@ class TestMessage(TestCase):
         self.message1._filter_url_list(filter_pattern)
         # assert
         assert self.message1.url_list is None
+
+
+class TestUrl(TestCase):
+    def setUp(self) -> None:
+        self.message_id = "1"
+        self.url = "http://www.some.url.com/file.csv"
+        self.url1 = Url(self.message_id, self.url)
+
+    def test_url_constructor(self):
+        # assert
+        assert self.url1.message_id == self.message_id
+        assert self.url1.url == self.url
+
+    def test_url_equality(self):
+        # setup
+        url2 = Url(self.message_id, self.url)
+        # assert
+        assert self.url1 == self.url1
+        assert self.url1 == url2
+
+    def test_url_non_equality(self):
+        # setup
+        url2 = Url(self.message_id, "http://www.another.url.com/different.txt")
+        # assert
+        assert self.url1 != url2
+
+    def test_url_comparisons_against_other_types(self):
+        # assert
+        assert self.url1 != ""
+        assert self.url1 != 0
+        assert self.url1 is not True
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._download_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_file_name")
+    def test_get_file(self, mock_get_file_name, mock_download):
+        # mock
+        mock_get_file_name.return_value = "test.csv"
+        mock_download.return_value = b"Some,Data"
+        # setup
+        expected = File("test.csv", BytesIO(b"Some,Data"))
+        # run
+        actual = self.url1.get_file()
+        # assert
+        mock_get_file_name.assert_called_once()
+        mock_download.assert_called_once()
+        assert expected == actual
+
+    @patch("tap_gmail_csv.gmail_client.models.requests.head")
+    def test_get_url_http_headers(self, mock_requests_head):
+        # setup
+        expected = {"content-type": "text/csv"}
+
+        @dataclass
+        class RequestsResponse:
+            headers: dict
+
+        # mock
+        mock_requests_head.return_value = RequestsResponse(headers=expected)
+        # run
+        actual = self.url1._get_url_http_headers()
+        # assert
+        mock_requests_head.assert_called_once_with(self.url1.url, allow_redirects=True)
+        assert expected == actual
+
+    def test_check_url_file_type(self):
+        # setup
+        # tuple of (test, expected)
+        tests = [
+            ("text/csv", "csv"),
+            ("text/plain", "csv"),
+            ("application/excel", "xls"),
+            ("application/vnd.ms-excel", "xls"),
+            ("application/x-excel", "xls"),
+            ("application/x-msexcel", "xls"),
+            ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+            ("application/zip", "zip"),
+            ("application/x-compressed", "zip"),
+            ("application/x-zip-compressed", "zip"),
+            ("multipart/x-zip", "zip"),
+            ("application/json", None),
+            ("", None),
+        ]
+        # run and assert
+        for t in tests:
+            actual = Url._check_url_file_type({"content-type": t[0] + " some other stuffs"})
+            assert actual == t[1]
+
+    def test_check_url_file_type_for_unsupported_types(self):
+        # setup - tuple of (test, expected)
+        tests = [
+            ("application/json", None),
+            ("", None),
+        ]
+        # run
+        for t in tests:
+            actual = Url._check_url_file_type({"content-type": t[0] + " some other stuffs"})
+            expected = t[1]
+            # assert
+            assert actual == expected
+
+    def test_get_filename_from_headers(self):
+        # setup - tuple of (test, expected)
+        tests = [
+            ("filename=file.pdf", "file.pdf"),
+            ("attachment; filename=file.pdf;", "file.pdf"),
+            ("attachment; filename=file.pdf  ;", "file.pdf"),
+            ("attachment; filename=file.pdf; form-data;", "file.pdf"),
+        ]
+        # run
+        for t in tests:
+            actual = Url._get_filename_from_headers({"content-disposition": t[0]})
+            expected = t[1]
+            # assert
+            assert actual == expected
+
+    def test_get_filename_from_headers_none_conditions(self):
+        # setup
+        tests = [
+            ("file.pdf", None),
+            ("filename=", None),
+            ("attachment; file=file.pdf;", None),
+            ("attachment;", None),
+            ("", None),
+            (None, None),
+        ]
+        # run
+        for t in tests:
+            actual = Url._get_filename_from_headers({"content-disposition": t[0]})
+            expected = t[1]
+            # assert
+            assert actual == expected
+
+    def test_get_filename_from_url(self):
+        # setup
+        tests = [
+            ("https://www.some.sebsite.com/reports-for-you/file.csv", "file.csv"),
+            ("https://www.some.sebsite.com/reports-for-you/file", "file"),
+            ("https://www.some.sebsite.com/reports-for-you/file.csv?_utm_source=abc&_utm_campaign=xyz", "file.csv"),
+            ("/file.csv", "file.csv"),
+        ]
+        # run
+        for t in tests:
+            test_url = Url("1", t[0])
+            actual = test_url._get_filename_from_url()
+            expected = t[1]
+            # assert
+            assert actual == expected
+
+    def test_get_filename_from_url_none_conditions(self):
+        # setup
+        tests = [
+            ("file.csv", None),
+            ("www.text.com/file.csv/", None),
+        ]
+        # run
+        for t in tests:
+            test_url = Url("1", t[0])
+            actual = test_url._get_filename_from_url()
+            expected = t[1]
+            # assert
+            assert actual == expected
+
+    def test_add_file_extension(self):
+        # setup
+        tests = [
+            ("", "csv", ".csv"),
+            ("f", "csv", "f.csv"),
+            ("file", "csv", "file.csv"),
+            ("file", "xlsx", "file.xlsx"),
+            ("file.csv", "csv", "file.csv"),
+            ("file.txt", "csv", "file.txt.csv"),
+        ]
+        # run
+        for t in tests:
+            actual = Url._add_file_extension(t[0], t[1])
+            expected = t[2]
+            # assert
+            assert actual == expected
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
+    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
+    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
+    def test_get_file_name_found_at_header_level(
+        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
+    ):
+        # setup
+        expected = "file.csv"
+        # mock
+        mock_check_filetype.return_value = "csv"
+        mock_filename_from_headers.return_value = expected
+        mock_file_extension.return_value = expected
+        # run
+        actual = self.url1._get_file_name()
+        # assert
+        mock_filename_from_url.assert_not_called()
+        mock_file_extension.assert_called_once_with("file.csv", "csv")
+        assert actual == expected
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
+    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
+    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
+    def test_get_file_name_found_at_url_level(
+        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
+    ):
+        # setup
+        expected = "file.csv"
+        # mock
+        mock_check_filetype.return_value = "csv"
+        mock_filename_from_headers.return_value = None
+        mock_filename_from_url.return_value = expected
+        mock_file_extension.return_value = expected
+        # run
+        actual = self.url1._get_file_name()
+        # assert
+        mock_file_extension.assert_called_once_with("file.csv", "csv")
+        assert actual == expected
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
+    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
+    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
+    def test_get_file_name_raises_exception_when_url_cannot_be_evaluated_bcuz_filename(
+        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
+    ):
+        # setup
+        expected = "file.csv"
+        # mock
+        mock_check_filetype.return_value = "csv"
+        mock_filename_from_headers.return_value = None
+        mock_filename_from_url.return_value = None
+        # run assert
+        with self.assertRaises(FileNameCannotBeEvaluatedException):
+            self.url1._get_file_name()
+        mock_file_extension.assert_not_called()
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
+    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
+    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
+    def test_get_file_name_raises_exception_when_url_cannot_be_evaluated_bcuz_filetype(
+        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
+    ):
+        # setup
+        expected = "file.csv"
+        # mock
+        mock_check_filetype.return_value = None
+        mock_filename_from_headers.return_value = "file.csv"
+        mock_filename_from_url.return_value = None
+        # run assert
+        with self.assertRaises(FileNameCannotBeEvaluatedException):
+            self.url1._get_file_name()
+        mock_file_extension.assert_not_called()
+
+    @patch("tap_gmail_csv.gmail_client.models.requests.get")
+    def test_download_from_url(self, mock_requests_get):
+        # setup
+        expected = b"content"
+
+        @dataclass
+        class RequestsResponse:
+            content: dict
+
+        # mock
+        mock_requests_get.return_value = RequestsResponse(content=expected)
+        # run
+        actual = self.url1._download_from_url()
+        # assert
+        mock_requests_get.assert_called_once_with(self.url1.url, allow_redirects=True)
+        assert expected == actual
