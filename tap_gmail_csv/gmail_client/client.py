@@ -165,13 +165,13 @@ class GmailClient:
         label_ids = message.get("labelIds")
         internal_date = message.get("internalDate", 0)
         attachment_list = GmailClient._convert_to_attachment_list(message)
-        download_urls: List[str] = []  # @TODO needs a get_message_raw response then get_message_body()
+        url_list: List[str] = []  # @TODO needs a get_message_raw response then get_message_body()
         email_to = GmailClient._find_in_header(message, "To")
         email_from = GmailClient._find_in_header(message, "From")
         email_subject = GmailClient._find_in_header(message, "Subject")
 
         return Message(
-            message_id, internal_date, label_ids, attachment_list, download_urls, email_to, email_from, email_subject
+            message_id, internal_date, label_ids, attachment_list, url_list, email_to, email_from, email_subject
         )
 
     def _get_messages(self, message_list: Iterable) -> Generator[Message, None, None]:

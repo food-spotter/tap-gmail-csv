@@ -60,7 +60,7 @@ class Message:
     internal_date: int
     label_ids: Optional[List[str]] = None
     attachment_list: Optional[List[Attachment]] = None
-    download_urls: Optional[List[str]] = None
+    url_list: Optional[List[str]] = None
     email_to: Optional[str] = None
     email_from: Optional[str] = None
     email_subject: Optional[str] = None
@@ -73,7 +73,7 @@ class Message:
             self.internal_date,
             self.label_ids,
             self.attachment_list,
-            self.download_urls,
+            self.url_list,
             self.email_to,
             self.email_from,
             self.email_subject,
@@ -82,7 +82,7 @@ class Message:
             other.internal_date,
             other.label_ids,
             other.attachment_list,
-            other.download_urls,
+            other.url_list,
             other.email_to,
             other.email_from,
             other.email_subject,
@@ -96,13 +96,13 @@ class Message:
 
     def filter(self, regex_pattern: str) -> None:
         """
-        Apply regex filter to filenames in `attachment_list` and urls in `download_urls`.
+        Apply regex filter to filenames in `attachment_list` and urls in `url_list`.
 
         Arguments:
             regex_pattern {str}
         """
         self._filter_attachment_list(regex_pattern)
-        self._filter_download_urls(regex_pattern)
+        self._filter_url_list(regex_pattern)
 
     def _filter_attachment_list(self, regex_pattern: str) -> None:
         """
@@ -119,17 +119,17 @@ class Message:
                     filtered_list.append(attachment)
             self.attachment_list = filtered_list
 
-    def _filter_download_urls(self, regex_pattern: str) -> None:
+    def _filter_url_list(self, regex_pattern: str) -> None:
         """
-        Apply regex filter on each download url string within `self.download_urls`
+        Apply regex filter on each download url string within `self.url_list`
 
         Arguments:
             regex_pattern {str}
         """
         matcher = re.compile(regex_pattern)
         filtered_list = []
-        if self.download_urls:
-            for url in self.download_urls:
+        if self.url_list:
+            for url in self.url_list:
                 if matcher.search(url):
                     filtered_list.append(url)
-            self.download_urls = filtered_list
+            self.url_list = filtered_list

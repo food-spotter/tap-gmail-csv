@@ -93,7 +93,7 @@ class TestMessage(TestCase):
         self.internal_date = 1000
         self.label_ids = ["Inbox"]
         self.attachment_list = [Attachment("1", "2", "file.txt")]
-        self.download_urls = ["https://download.me/file.csv"]
+        self.url_list = ["https://download.me/file.csv"]
         self.email_to = "to.me@email.net"
         self.email_from = "from.you@email.net"
         self.email_subject = "subject"
@@ -103,7 +103,7 @@ class TestMessage(TestCase):
             self.internal_date,
             self.label_ids,
             self.attachment_list,
-            self.download_urls,
+            self.url_list,
             self.email_to,
             self.email_from,
             self.email_subject,
@@ -115,7 +115,7 @@ class TestMessage(TestCase):
         assert self.message1.internal_date == self.internal_date
         assert self.message1.label_ids == self.label_ids
         assert self.message1.attachment_list == self.attachment_list
-        assert self.message1.download_urls == self.download_urls
+        assert self.message1.url_list == self.url_list
         assert self.message1.email_to == self.email_to
         assert self.message1.email_from == self.email_from
         assert self.message1.email_subject == self.email_subject
@@ -128,7 +128,7 @@ class TestMessage(TestCase):
         assert message2.internal_date == self.internal_date
         assert message2.label_ids is None
         assert message2.attachment_list is None
-        assert message2.download_urls is None
+        assert message2.url_list is None
         assert message2.email_to is None
         assert message2.email_from is None
         assert message2.email_subject is None
@@ -140,7 +140,7 @@ class TestMessage(TestCase):
             self.internal_date,
             self.label_ids,
             self.attachment_list,
-            self.download_urls,
+            self.url_list,
             self.email_to,
             self.email_from,
             self.email_subject,
@@ -177,7 +177,7 @@ class TestMessage(TestCase):
         assert message1 > message0
         assert not message0 > message1
 
-    @patch("tap_gmail_csv.gmail_client.models.Message._filter_download_urls")
+    @patch("tap_gmail_csv.gmail_client.models.Message._filter_url_list")
     @patch("tap_gmail_csv.gmail_client.models.Message._filter_attachment_list")
     def test_filter(self, mock_filter_attachments, mock_filter_urls):
         # setup
@@ -210,24 +210,24 @@ class TestMessage(TestCase):
         # assert
         assert self.message1.attachment_list is None
 
-    def test_filter_download_urls(self):
+    def test_filter_url_list(self):
         # setup
-        self.message1.download_urls = [
+        self.message1.url_list = [
             "https://www.some.sebsite.com/reports-for-you/file.txt",
             "https://www.some.sebsite.com/reports-for-you/file.csv",
             "https://www.some.sebsite.com/reports-for-you/file.xls",
         ]
         filter_pattern = "(.*)\\.csv$"
         # run
-        self.message1._filter_download_urls(filter_pattern)
+        self.message1._filter_url_list(filter_pattern)
         # assert
-        assert self.message1.download_urls == ["https://www.some.sebsite.com/reports-for-you/file.csv"]
+        assert self.message1.url_list == ["https://www.some.sebsite.com/reports-for-you/file.csv"]
 
-    def test_filter_download_urls_none_check(self):
+    def test_filter_url_list_none_check(self):
         # setup
-        self.message1.download_urls = None
+        self.message1.url_list = None
         filter_pattern = "(.*)\\.csv$"
         # run
-        self.message1._filter_download_urls(filter_pattern)
+        self.message1._filter_url_list(filter_pattern)
         # assert
-        assert self.message1.download_urls is None
+        assert self.message1.url_list is None
