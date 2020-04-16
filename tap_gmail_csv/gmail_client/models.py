@@ -221,10 +221,11 @@ class Url(BasicMessageResource):
         if not file_name:
             file_name = self._get_filename_from_url()
 
-        if file_name is None or file_type is None:
+        if file_name is None:
             raise FileNameCannotBeEvaluatedException
 
-        file_name = self._add_file_extension(file_name, file_type)
+        if file_type:
+            file_name = self._add_file_extension(file_name, file_type)
 
         return file_name
 
@@ -310,7 +311,7 @@ class Message:
 
     def _filter_url_list(self, regex_pattern: str) -> None:
         """
-        Apply regex filter on each download url string within `self.url_list`
+        Apply regex filter on each Url object within `self.url_list`
 
         Arguments:
             regex_pattern {str}

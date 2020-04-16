@@ -462,6 +462,27 @@ class TestUrl(TestCase):
     @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
     @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
     @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
+    def test_get_file_name_found_and_unidentified_filetype(
+        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
+    ):
+        # setup
+        expected = "file.csv"
+        # mock
+        mock_check_filetype.return_value = None
+        mock_filename_from_headers.return_value = None
+        mock_filename_from_url.return_value = expected
+        mock_file_extension.return_value = expected
+        # run
+        actual = self.url1._get_file_name()
+        # assert
+        mock_file_extension.assert_not_called()
+        assert actual == expected
+
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
+    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
+    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
+    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
     def test_get_file_name_raises_exception_when_url_cannot_be_evaluated_bcuz_filename(
         self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
     ):
@@ -470,25 +491,6 @@ class TestUrl(TestCase):
         # mock
         mock_check_filetype.return_value = "csv"
         mock_filename_from_headers.return_value = None
-        mock_filename_from_url.return_value = None
-        # run assert
-        with self.assertRaises(FileNameCannotBeEvaluatedException):
-            self.url1._get_file_name()
-        mock_file_extension.assert_not_called()
-
-    @patch("tap_gmail_csv.gmail_client.models.Url._get_url_http_headers", MagicMock())
-    @patch("tap_gmail_csv.gmail_client.models.Url._add_file_extension")
-    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_url")
-    @patch("tap_gmail_csv.gmail_client.models.Url._get_filename_from_headers")
-    @patch("tap_gmail_csv.gmail_client.models.Url._check_url_file_type")
-    def test_get_file_name_raises_exception_when_url_cannot_be_evaluated_bcuz_filetype(
-        self, mock_check_filetype, mock_filename_from_headers, mock_filename_from_url, mock_file_extension
-    ):
-        # setup
-        expected = "file.csv"
-        # mock
-        mock_check_filetype.return_value = None
-        mock_filename_from_headers.return_value = "file.csv"
         mock_filename_from_url.return_value = None
         # run assert
         with self.assertRaises(FileNameCannotBeEvaluatedException):
