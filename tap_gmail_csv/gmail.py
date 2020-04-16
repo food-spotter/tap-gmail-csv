@@ -1,32 +1,36 @@
 import os
-import re
 import base64
 import datetime
 from dateutil import parser
 import tempfile
-from typing import List, Union, Dict, Generator, Iterator, Any
+from typing import List, Union, Dict, Iterator, Any
 
 from tap_gmail_csv.gmail_client.client import GmailClient
-from tap_gmail_csv.gmail_client.models import Message, File
+from tap_gmail_csv.gmail_client.models import Message, File, Url, Attachment
 
 from tap_gmail_csv.logger import LOGGER as logger
 import tap_gmail_csv.format_handler
 
+# "Who am i?""
+# I am a high level helper library to allow tap specific gmail logic to sit above
+# the basic gmail client and client models.
 
-A_HREF_REGEX = r"<a\s+(?:[^>]*?\s+)?href=([\"'])(http.*?)\1"
+
+class UnknownSourceTypeException(Exception):
+    pass
 
 
 def gmail_timestamp_to_epoch_seconds(epoch_time_ms: int) -> int:
     """
     Convert GMail `internalDate` into epoch time in seconds.
-    
+
     Arguments:
         epoch_time_ms {int} -- the GMail `internalDate` epoch time which is in milliseconds.
-    
+
     Returns:
         int -- epoch time in seconds
     """
-    epoch_time_sec = int(epoch_time_ms) / 1000
+    epoch_time_sec = int(int(epoch_time_ms) / 1000)
     return epoch_time_sec
 
 
@@ -140,7 +144,8 @@ def get_emails_for_table(
         gmail_client = create_client(config)
 
     search_query = config.get("gmail_search_query", "")
-    csv_source = table_spec.get("source", "attachment")
+    csv_source = table_spec.get("source_type", "attachment")
+    pattern = table_spec.get("pattern", "")
 
     # modified_since was the state value for tap-s3-csv, @TODO rename this to something gmail specific
 
@@ -152,13 +157,15 @@ def get_emails_for_table(
     # append the `after` filter tp the gmail search query
     search_query += f" after:{epoch_search_from}"
 
-    # @TODO apply pattern match on file attachments
-    # pattern = table_spec["pattern"]
-    # matcher = re.compile(pattern)
-
     logger.info(f'Checking email using gmail search query: "{search_query}" for files located in "{csv_source}"')
 
     messages = _get_ordered_messages(gmail_client, search_query)
+
+    logger.info(f"Found [{len(messages)}] matching email message(s)")
+
+    # apply regex pattern filter to ensure attachments/url lists are valid
+    for m in messages:
+        m.filter(pattern)
 
     return messages
 
@@ -169,14 +176,14 @@ def sample_file(
     """
     Sample rows of a file.
     This function remains the same as the original s.3 version
-    
+
     Arguments:
         config {dict} -- singer config
         table_spec {dict} -- found in the config file
         file_attachment {File} -- File object to be processed
         sample_rate {int} -- Row intervals
         max_records {int} -- Maximum number of records to sample
-    
+
     Returns:
         List[Dict] -- sampled rows
     """
@@ -202,14 +209,21 @@ def sample_file(
 
 
 def sample_files(
-    config: dict, table_spec: dict, gmail_emails_list: Iterator[Message], sample_rate=10, max_records=1000, max_files=5
+    config: dict,
+    table_spec: dict,
+    gmail_emails_list: Iterator[Message],
+    source_type: str,
+    sample_rate: int = 10,
+    max_records: int = 1000,
+    max_files: int = 5,
 ) -> List[Dict]:
     """[summary]
 
     Arguments:
         config {dict} -- singer config
         table_spec {dict} -- found in the config file
-        gmail_emails_list {Iterator[Message]} -- All Messages to check against 
+        gmail_emails_list {Iterator[Message]} -- All Messages to check against
+        source_type {str} -- "attachment" or "url"
 
     Keyword Arguments:
         sample_rate {int} -- Row intervals
@@ -219,52 +233,32 @@ def sample_files(
     Returns:
         List[Dict] -- sampled rows
     """
-    pattern = table_spec["pattern"]
-    matcher = re.compile(pattern)
-
+    ALLOWED_SOURCE_TYPE = ["attachment", "url"]
     to_return: List[Dict] = []
-
     files_so_far = 0
+
+    if source_type not in ALLOWED_SOURCE_TYPE:
+        raise UnknownSourceTypeException("Allowed values: 'attachment', 'url'")
 
     client = create_client(config)
 
     for msg in gmail_emails_list:
-        for attachment in msg.attachment_list:
-            # do filename pattern check
-            if matcher.search(attachment.attachment_name):
-                to_return += sample_file(config, table_spec, attachment.get_file(client), sample_rate, max_records)
+        resource_list: List[Union[Attachment, Url]] = []
+        if source_type == "attachment":
+            resource_list = msg.attachment_list
+        elif source_type == "url":
+            resource_list = msg.url_list
 
-                files_so_far += 1
-                if files_so_far >= max_files:
-                    break
+        for resource in resource_list:
+
+            to_return += sample_file(
+                config, table_spec, resource.get_file(gmail_client=client), sample_rate, max_records
+            )
+
+            files_so_far += 1
+            if files_so_far >= max_files:
+                break
         if files_so_far >= max_files:
             break
 
     return to_return
-
-
-def main():
-    client = GmailClient("token.pickle")
-    messages = client.search_messages(
-        search_query="to:spotter.food+csvtest@gmail.com after:1582993422", results_per_page=10, max_search_results=10
-    )
-
-    for m in messages:
-        message = client.get_message_body(m["id"])
-        for m in message:
-            print(m)
-
-        state = _extract_state_from_message(m)
-
-        # attachments = client.get_attachments_from_message(message, filetype_filter=".csv")
-        #
-        #
-        # for f in attachments:
-        #     print(f)
-        #     reader = csv.reader(f['file_content'], delimiter=',')
-        #     for row in reader:
-        #         print(row)
-
-
-if __name__ == "__main__":
-    main()
