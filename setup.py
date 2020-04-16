@@ -17,6 +17,8 @@ setup(
         "xlrd==1.0.0",
         "google-auth-httplib2==0.0.3",
         "google-auth-oauthlib==0.4.1",
+        "requests==2.22.0",
+        "beautifulsoup4==4.9.0",
     ],
     entry_points="""
           [console_scripts]
