@@ -4,7 +4,7 @@ import sys
 import pickle
 import base64
 import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import singer
 import dateutil
@@ -16,7 +16,7 @@ import tap_gmail_csv.config
 import tap_gmail_csv.format_handler
 from tap_gmail_csv.logger import LOGGER as logger
 from tap_gmail_csv import gmail
-from tap_gmail_csv.gmail_client.models import File
+from tap_gmail_csv.gmail_client.models import File, Attachment, Url
 
 
 def merge_dicts(first, second):
@@ -37,10 +37,11 @@ def merge_dicts(first, second):
 
 def get_sampled_schema_for_table(config, table_spec):
     logger.info("Sampling records to determine table schema.")
+    source_type = table_spec.get("source_type", "attachment")
 
     gmail_emails = gmail.get_emails_for_table(config, table_spec)
 
-    samples = gmail.sample_files(config, table_spec, gmail_emails)
+    samples = gmail.sample_files(config, table_spec, gmail_emails, source_type)
 
     metadata_schema = {
         "_email_source_bucket": {"type": "string"},
@@ -76,12 +77,16 @@ def sync_table(config, state, table_spec, schema: dict):
     client = gmail.create_client(config)
 
     for message in gmail_emails_list:
+        resource_list: List[Union[Attachment, Url]] = []
         if source_type == "attachment":
-            message.filter(pattern)
-            # None check
-            if message.attachment_list:
-                for att in message.attachment_list:
-                    files_list.append((message.internal_date, att))
+            resource_list = message.attachment_list
+        elif source_type == "url":
+            resource_list = message.url_list
+
+        # None check
+        if resource_list:
+            for resource in resource_list:
+                files_list.append((message.internal_date, resource))
 
     if len(files_list) == 0:
         return state
@@ -99,19 +104,44 @@ def sync_table(config, state, table_spec, schema: dict):
     records_streamed = 0
     schema = {}
 
-    for internal_date, attachment in files_list:
-        records_streamed += sync_table_file(config, attachment.get_file(client), table_spec, schema)
+    # since each message has the potential to carry multiple file sources, we will
+    # write the state only after each message is fully processed
+    curr_message_id = None
+    prev_message_id = None
+    files_list_len = len(files_list)
 
-        state[table_name] = {
-            "modified_since": datetime.datetime.fromtimestamp(
-                gmail.gmail_timestamp_to_epoch_seconds(internal_date)
-            ).isoformat()
-        }
+    for i, tup in enumerate(files_list):
+        # unpack tuple
+        internal_date = tup[0]
+        resource = tup[1]
 
-        singer.write_state(state)
+        curr_message_id = resource.message_id
+        if prev_message_id and prev_message_id != curr_message_id:
+            state = write_state(state, table_name, internal_date)
+
+        # resource can be a Url or Attachment resource
+        # both implement the get_file() function and return a generic File object
+        records_streamed += sync_table_file(config, resource.get_file(gmail_client=client), table_spec, schema)
+
+        # if end of list, write the state before exiting for loop
+        if i == files_list_len - 1:
+            state = write_state(state, table_name, internal_date)
+        else:
+            # update the current to the prev for next run
+            prev_message_id = curr_message_id
 
     logger.info('Wrote {} records for table "{}".'.format(records_streamed, table_name))
 
+    return state
+
+
+def write_state(state, table_name, internal_date):
+    state[table_name] = {
+        "modified_since": datetime.datetime.fromtimestamp(
+            gmail.gmail_timestamp_to_epoch_seconds(int(internal_date))
+        ).isoformat()
+    }
+    singer.write_state(state)
     return state
 
 
@@ -224,10 +254,11 @@ def get_selected_stream(catalog: dict, table_name: str) -> Optional[dict]:
         Optional[dict] -- matching stream schema. None otherwise.
     """
     logger.info(f"Looking for stream: {table_name}")
-    for stream in catalog.get("streams", []):
-        if stream.get("stream") == table_name:
-            logger.info(f"Found stream for: {table_name}")
-            return stream
+    if catalog:
+        for stream in catalog.get("streams", []):
+            if stream.get("stream") == table_name:
+                logger.info(f"Found stream for: {table_name}")
+                return stream
     logger.info(f"No stream found for: {table_name}. Will fall back to inferring schema later in the process.")
     return None
 
