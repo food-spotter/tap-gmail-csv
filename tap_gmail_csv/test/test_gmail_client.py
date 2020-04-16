@@ -5,7 +5,7 @@ from tap_gmail_csv.gmail_client.client import (
     GoogleAPICredentialsAreAnInvalidFormat,
     GoogleAPICredentialsNotFound,
 )
-from tap_gmail_csv.gmail_client.models import Attachment, Message
+from tap_gmail_csv.gmail_client.models import Attachment, Message, Url
 
 
 class TestGmailClient(TestCase):
@@ -54,6 +54,16 @@ class TestGmailClient(TestCase):
                         ],
                     },
                     {
+                        "partId": "1",
+                        "mimeType": "text/html",
+                        "filename": "",
+                        "headers": [
+                            {"name": "Content-Type", "value": 'text/html; charset="UTF-8"'},
+                            {"name": "Content-Transfer-Encoding", "value": "quoted-printable"},
+                        ],
+                        "body": {"size": 4602, "data": "base64encodedHtmlData"},
+                    },
+                    {
                         "body": {"attachmentId": "0123456abcXYZ-attachment", "size": 6051},
                         "filename": "MOCK_DATA.csv",
                         "headers": [
@@ -64,7 +74,7 @@ class TestGmailClient(TestCase):
                             {"name": "Content-ID", "value": "<f_k785ejfu0>"},
                         ],
                         "mimeType": "application/vnd.ms-excel",
-                        "partId": "1",
+                        "partId": "2",
                     },
                 ],
             },
@@ -149,7 +159,7 @@ class TestGmailClient(TestCase):
 
     def test_convert_to_attachment_with_attachment(self):
         # setup
-        test_part = self.sample_gmail_response.get("payload").get("parts")[1]
+        test_part = self.sample_gmail_response.get("payload").get("parts")[2]
         message_id = self.sample_gmail_response.get("id")
         expected = Attachment(message_id, "0123456abcXYZ-attachment", "MOCK_DATA.csv")
         # run
@@ -229,12 +239,14 @@ class TestGmailClient(TestCase):
         assert expected == actual
 
     @patch("tap_gmail_csv.gmail_client.client.GmailClient._find_in_header")
+    @patch("tap_gmail_csv.gmail_client.client.GmailClient._convert_to_url_list")
     @patch("tap_gmail_csv.gmail_client.client.GmailClient._convert_to_attachment_list")
-    def test_convert_to_message_obj(self, mock_convert_to_attachment_list, mock_find_header):
+    def test_convert_to_message_obj(self, mock_convert_to_attachment_list, mock_convert_to_url_list, mock_find_header):
         # setup
         message = self.sample_gmail_response
         # mock
         mock_convert_to_attachment_list.return_value = [Attachment("1", "2", "file.csv")]
+        mock_convert_to_url_list.return_value = []
         mock_find_header.side_effect = ["to_x", "from_x", "subject_x"]
 
         expected = Message(
@@ -382,6 +394,66 @@ class TestGmailClient(TestCase):
         )
         # assert
         assert expected == list(actual)
+
+    def test_extract_href_from_html_positive_values(self):
+        # setup
+        html = """
+        <a href='http://www.test1.com'>click me</a>
+        <a href="http://www.test2.com">click me</a>
+        <a  href = 'http://www.test3.com' > click me </a>
+        <a  href = "http://www.test4.com" > click me </a>
+        <a> click me </a>
+        """
+        expected = set(["http://www.test1.com", "http://www.test2.com", "http://www.test3.com", "http://www.test4.com"])
+        # run
+        actual = GmailClient._extract_href_from_html(html)
+        # assert
+        assert list(actual).sort() == list(expected).sort()
+
+    def test_extract_href_from_html_no_values(self):
+        # setup
+        html = ""
+        expected = set([])
+        # run
+        actual = GmailClient._extract_href_from_html(html)
+        # assert
+        assert list(actual).sort() == list(expected).sort()
+
+    @patch("tap_gmail_csv.gmail_client.client.GmailClient._extract_href_from_html")
+    @patch("base64.urlsafe_b64decode")
+    def test_convert_to_url_list_successful_pass(self, mock_b64decode, mock_extract_href):
+        # setup
+        message = self.sample_gmail_response
+        message_id = message.get("id")
+        html = "some html"
+        expected = [Url(message_id, "https://www.download.com/file.csv")]
+        # mock
+        mock_b64decode.return_value = bytes(html, "UTF-8")
+        mock_extract_href.side_effect = [set(["https://www.download.com/file.csv"])]
+        # run
+        actual = GmailClient._convert_to_url_list(message)
+        # assert
+        mock_b64decode.assert_called_once_with("base64encodedHtmlData")
+        mock_extract_href.assert_called_once_with(html)
+        assert expected == actual
+
+    @patch("tap_gmail_csv.gmail_client.client.GmailClient._extract_href_from_html")
+    @patch("base64.urlsafe_b64decode")
+    def test_convert_to_url_list_with_no_matches_gives_empty_list(self, mock_b64decode, mock_extract_href):
+        # setup
+        message = self.sample_gmail_response
+        message["payload"]["parts"] = []
+        html = "some html"
+        expected = []
+        # mock
+        mock_b64decode.return_value = bytes(html, "UTF-8")
+        mock_extract_href.side_effect = [set(["https://www.download.com/file.csv"])]
+        # run
+        actual = GmailClient._convert_to_url_list(self.sample_gmail_response)
+        # assert
+        mock_b64decode.assert_not_called()
+        mock_extract_href.assert_not_called()
+        assert expected == actual
 
 
 if __name__ == "__main__":

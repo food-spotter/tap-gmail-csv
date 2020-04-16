@@ -1,5 +1,7 @@
 import re
 import xlrd
+import gzip
+from tap_gmail_csv.gmail_client.models import File
 
 
 def generator_wrapper(reader):
@@ -18,20 +20,23 @@ def generator_wrapper(reader):
             formatted_key = header_cell.value
 
             # remove non-word, non-whitespace characters
-            formatted_key = re.sub(r"[^\w\s]", '', formatted_key)
+            formatted_key = re.sub(r"[^\w\s]", "", formatted_key)
 
             # replace whitespace with underscores
-            formatted_key = re.sub(r"\s+", '_', formatted_key)
+            formatted_key = re.sub(r"\s+", "_", formatted_key)
 
             to_return[formatted_key.lower()] = cell.value
 
         yield to_return
 
 
-def get_row_iterator(table_spec, file_handle):
-    workbook = xlrd.open_workbook(
-        on_demand=True,
-        file_contents=file_handle.read())
+def get_row_iterator(table_spec, file_handle: File):
+    if table_spec.get("unzip"):
+        raw_stream = gzip.GzipFile(fileobj=file_handle.raw_data)
+    else:
+        raw_stream = file_handle.raw_data
+
+    workbook = xlrd.open_workbook(on_demand=True, file_contents=raw_stream.read())
 
     sheet = workbook.sheet_by_name(table_spec["worksheet_name"])
 

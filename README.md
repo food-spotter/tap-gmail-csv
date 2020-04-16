@@ -1,6 +1,6 @@
 # tap-gmail-csv
 
-This is a [Singer](https://singer.io/) tap that reads CSV/Excel attachments from a GMail Mailbox and produces JSON-formatted data following the Singer spec. 
+This is a [Singer](https://singer.io/) tap that reads CSV/Excel attachments/urls from a GMail Mailbox and produces JSON-formatted data following the Singer spec. 
 
 tap-gmail-csv works together with any other Singer Target to move this to any target destination.
 
@@ -23,7 +23,7 @@ Changes from [tap-s3-csv](https://circleci.com/gh/fishtown-analytics/tap-s3-csv/
         "start_date": "2017-05-01T17:30:00Z", // this is overridden if a STATE file is specified
         "tables": [
             {
-                "source_type": "attachment" // supports ['attachment', 'url']. 'url' still to be implemented
+                "source_type": "attachment" // supports ['attachment', 'url'] - url should use the `pattern` field to ensure valid download links are fetched(!)
             }
         ]
     }
@@ -80,11 +80,14 @@ You now have successfully authenticated tap-gmail-csv to connect to your GMail a
 
 This tap:
 
- - Searches GMail for attachment files matching the spec given.
+ - Searches GMail for attachment files (or downloadable csv/excel links) matching the spec given.
  - [Optionally] Samples 1000 records out of the first five files found to infer datatypes.
  - Iterates through emails, oldest first, finding attachments that match your criteria, outputting data according
    to the generated schema & Singer spec.
- - After completing each file, it writes out state that can be used to enable incremental replication. 
+ - After completing each email message, it writes the state so that it can be used to enable incremental replication. 
+
+The `url` looks for anchor tag links inside the HTML body of an email. In some cases, the provider of the data you are ingesting may
+send the data to you in this manner for security or email file restrictions.
 
 ### Example
 
@@ -136,6 +139,12 @@ An output record might look like:
 }
 ```
 
+### Recommendations
+
+Although the original `tap-s3-csv` which this tap is forked from supports multiple ingestions of different file schemas via the `tables` array list in the CONFIG file,
+it is recommended to not put each of your different ingestion jobs are separate elements in this array list. 
+Instead, it is better to separate each data ingestion in it's own config file and run the `tap | target` process per config file in your preferred environment (docker container, etc).
+
 ### Input File Gotchas
 
 - Input files MUST have a header row.
@@ -181,8 +190,8 @@ See below for an exhaustive list of configuration fields:
             // bucket
             "search_prefix": "csv-exports",
 
-            // pattern to match in the bucket
-            "pattern": "csv-exports/(.*)\\.csv$",
+            // pattern to match an attachment filename or download url inside the html message body
+            "pattern": "(.*)\\.csv$",
 
             // primary key for this table. if append only, use:
             //   ["_email_source_file", "_email_source_lineno"]
@@ -191,15 +200,15 @@ See below for an exhaustive list of configuration fields:
             // format, either "csv" or "excel"
             "format": "csv",
 
-            // does the attacment come from an attachment or a link to be downloaded from the email body ['attachment', 'url']
-            // currently only attachment is implemented
+            // specify if file to process come from an attachment or a link to be downloaded from the email body ['attachment', 'url']
+            // if `url` is used, it's highly recommended you use the `pattern` field to ensure other website links are not picked up
             "source": "attachment",
 
             // record delimter (optional), defaults to ","
             "delimiter": "|",
 
             // if true, unzip the file before reading it at a csv
-            "unzip": true,
+            "unzip": false,
 
             // if specified, override the default CSV quoting config
             // More info: https://docs.python.org/3/library/csv.html#csv.QUOTE_ALL
@@ -251,6 +260,3 @@ See below for an exhaustive list of configuration fields:
   - `_email_source_file`: The path to the file that this record came from
   - `_email_source_lineno`: The line number in the source file that this record was found on
   - `_email_extra`: If you specify field names in the config, and there are more records in a row than field names, the overflow will end up here.
-
-## TODOs:
-* Support URL links inside the HTML body of an email instead of attachments. Some senders of data do this for security but also due to email file restrictions.

@@ -3,12 +3,13 @@ import base64
 import os.path
 import email
 from io import BytesIO
-from typing import List, Dict, Generator, Iterable, Optional, Union
+from typing import List, Dict, Generator, Iterable, Optional, Union, Set
 
 from googleapiclient.discovery import build, Resource
 from google.oauth2.credentials import Credentials
+from bs4 import BeautifulSoup
 
-from tap_gmail_csv.gmail_client.models import Message, File, Attachment
+from tap_gmail_csv.gmail_client.models import Message, File, Attachment, Url
 
 
 class GoogleAPICredentialsNotFound(Exception):
@@ -139,6 +140,52 @@ class GmailClient:
         return attachments
 
     @staticmethod
+    def _convert_to_url_list(message: dict) -> List[Url]:
+        """
+        Gets a unique List of `Url`s for a given raw GMail response.
+        Searches for `"text/html"` and `"text/plain"` content and extracts the href
+        attribute value of all html anchor tags.
+
+        Arguments:
+            message {dict} -- the raw GMail response from the `messages` resource.
+
+        Returns:
+            List[Url] - unique list of all href links inside the html portion of the message text
+        """
+        url_set = set()
+        parts = message.get("payload", {}).get("parts", [])
+
+        for part in parts:
+            if part.get("mimeType", "") == "text/html":
+                raw_data = part.get("body", {}).get("data", b"")
+                html_content = base64.urlsafe_b64decode(raw_data).decode("UTF-8")
+                url_set.update(GmailClient._extract_href_from_html(html_content))
+            if part.get("mimeType", "") == "text/plain":
+                raw_data = part.get("body", {}).get("data", b"")
+                html_content = base64.urlsafe_b64decode(raw_data).decode("UTF-8")
+                url_set.update(GmailClient._extract_href_from_html(html_content))
+
+        return [Url(message["id"], link) for link in url_set]
+
+    @staticmethod
+    def _extract_href_from_html(html_content: str) -> Set[str]:
+        """
+        Returns all unique href content from given HTML document.
+
+        Arguments:
+            html_content {str}
+
+        Returns:
+            Set[str] -- unique set of urls
+        """
+        url_set = set()
+        soup = BeautifulSoup(html_content, "html.parser")
+        matches = soup.find_all("a", href=True)
+        for m in matches:
+            url_set.add(m.get("href"))
+        return url_set
+
+    @staticmethod
     def _find_in_header(message: dict, key: str) -> Optional[str]:
         """
         Extract the key value from the header data of a raw GMail api response of a `messages` resource.
@@ -165,13 +212,13 @@ class GmailClient:
         label_ids = message.get("labelIds")
         internal_date = message.get("internalDate", 0)
         attachment_list = GmailClient._convert_to_attachment_list(message)
-        download_urls: List[str] = []  # @TODO needs a get_message_raw response then get_message_body()
+        url_list: List[str] = GmailClient._convert_to_url_list(message)
         email_to = GmailClient._find_in_header(message, "To")
         email_from = GmailClient._find_in_header(message, "From")
         email_subject = GmailClient._find_in_header(message, "Subject")
 
         return Message(
-            message_id, internal_date, label_ids, attachment_list, download_urls, email_to, email_from, email_subject
+            message_id, internal_date, label_ids, attachment_list, url_list, email_to, email_from, email_subject
         )
 
     def _get_messages(self, message_list: Iterable) -> Generator[Message, None, None]:
