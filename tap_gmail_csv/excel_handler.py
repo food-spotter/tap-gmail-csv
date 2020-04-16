@@ -1,5 +1,6 @@
 import re
 import xlrd
+import gzip
 from tap_gmail_csv.gmail_client.models import File
 
 
@@ -30,7 +31,10 @@ def generator_wrapper(reader):
 
 
 def get_row_iterator(table_spec, file_handle: File):
-    raw_stream = file_handle.raw_data
+    if table_spec.get("unzip"):
+        raw_stream = gzip.GzipFile(fileobj=file_handle.raw_data)
+    else:
+        raw_stream = file_handle.raw_data
 
     workbook = xlrd.open_workbook(on_demand=True, file_contents=raw_stream.read())
 
